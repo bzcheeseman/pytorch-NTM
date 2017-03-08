@@ -13,7 +13,7 @@ import torch.nn.functional as Funct
 from torch.autograd import Variable
 
 class RecurrentController(nn.Module):
-    def __init__(self, batch_size, use_cuda=True):
+    def __init__(self, batch_size, use_cuda=torch.cuda.is_available()):
         super(RecurrentController, self).__init__()
 
         self.input_size = 32
