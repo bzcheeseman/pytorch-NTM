@@ -15,12 +15,13 @@ from torch.autograd import Variable
 from Controller.FeedForwardController import *
 from Memory.Memory import *
 
+
 class Head(nn.Module):
-    def __init__(self, controller, num_shifts=3, memory_dims=(128, 20)):
+    def __init__(self, ctrlr, num_shifts=3, memory_dims=(128, 20)):
         super(Head, self).__init__()
 
         self.memory_dims = memory_dims
-        self.controller = controller
+        self.controller = ctrlr
         self.num_shifts = num_shifts
 
         # Key - clipped linear
