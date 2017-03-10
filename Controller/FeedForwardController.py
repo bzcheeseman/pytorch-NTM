@@ -30,6 +30,8 @@ class FeedForwardController(nn.Module):
         self.num_write_heads = 1
         self.memory_dims = memory_dims
 
+        self.read  # read heads read out something
+
         self.hidden = Variable(torch.rand([1, 1, num_hidden, 1]))
 
         # self.read_heads = []
@@ -39,5 +41,5 @@ class FeedForwardController(nn.Module):
         self.read_to_hid = nn.Linear(self.num_read_heads*self.memory_dims[1], self.num_hidden)
 
     def forward(self, x):
-        pass
+        self.hidden = torch.cat(self.in_to_hid(x), self.read_to_hid(self.read))
 
