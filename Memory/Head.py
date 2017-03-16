@@ -15,7 +15,7 @@ import numpy as np
 
 from Controller.FeedForwardController import *
 from Utils import similarities
-
+from Memory import *
 
 class Head(nn.Module):
     def __init__(self,
@@ -43,16 +43,8 @@ class Head(nn.Module):
         # Gamma - 1 + Relu
         self.gamma = nn.Linear(self.controller.num_hidden, 1)
 
-        # Weights vector - init to one-hot vector
-        self.weights = torch.FloatTensor(1, self.memory_dims[0]).zero_()
-        self.weights[0, 0] = 1.0
-
-        self.w_tm1 = Variable(torch.FloatTensor(1, self.memory_dims[0]))
-
-        self.m_t = Variable(torch.FloatTensor(self.memory_dims[0], self.memory_dims[1]).fill_(1e-6))
-
-    def get_weights(self):
-        hidden = self.controller.hidden.permute(0, 1, 3, 2)[0, 0]  # get around the weird tensor/matrix issues in torch
+    def get_weights(self, h_t, w_tm1, m_t):
+        hidden = h_t  # get around the weird tensor/matrix issues in torch
         k_t = torch.clamp(self.key(hidden), 0, 1)  # vector size (memory_dims[1])
         beta_t = Funct.relu(self.beta(hidden), inplace=True)  # number
         g_t = torch.clamp(Funct.hardtanh(self.gate(hidden), min_val=0.0, max_val=1.0, inplace=True), min=-1, max=1)  # number
@@ -61,11 +53,13 @@ class Head(nn.Module):
 
         # TODO: content addressing
         beta_t = beta_t.repeat(1, self.memory_dims[0])
-        w_c = Funct.softmax(beta_t * similarities.cosine_similarity(k_t, self.m_t))  # vector size (memory_dims[0])
+        print(k_t)
+        print(m_t)
+        w_c = Funct.softmax(beta_t * similarities.cosine_similarity(k_t, m_t))  # vector size (memory_dims[0])
 
         # TODO: Interpolation
         g_tr = g_t.repeat(1, self.memory_dims[0])
-        w_g = g_tr * w_c + (1.0 - g_tr) * self.w_tm1  # vector size (memory_dims[0]) (i think)
+        w_g = g_tr * w_c + (1.0 - g_tr) * w_tm1  # vector size (memory_dims[0]) (i think)
 
         # TODO: Conv Shift
         w_tilde = Variable(torch.FloatTensor(np.convolve(w_g.data.numpy()[0], s_t.data.numpy()[0], mode="same")))
@@ -90,30 +84,29 @@ class WriteHead(Head):
         # Add - Clipped Linear
         self.hid_to_add = nn.Linear(self.controller.num_hidden, self.memory_dims[1])
 
-    def write_to_memory(self):
-        hidden = self.controller.hidden.permute(0, 1, 3, 2)[0, 0]
+    def write_to_memory(self, h_t, w_tm1, m_t):
+        hidden = h_t.permute(0, 1, 3, 2)[0, 0]
         e_t = Funct.hardtanh(self.hid_to_erase(hidden), min_val=0.0, max_val=1.0, inplace=True)
         a_t = torch.clamp(self.hid_to_add(hidden), min=0.0, max=1.0)
-        m_tp1 = Variable(torch.FloatTensor(*self.m_t.size()).fill_(1.0))
-        torch.addr(1.0, m_tp1, -1.0, self.w_tm1[0], e_t[0])
-        m_tp1 = self.m_t * m_tp1
-        torch.addr(1.0, m_tp1, 1.0, self.w_tm1[0], a_t[0])
-        self.m_t = m_tp1
-        return self.m_t
+        m_tp1 = Variable(torch.FloatTensor(*m_t.size()).fill_(1.0))
+        torch.addr(1.0, m_tp1, -1.0, w_tm1[0], e_t[0])
+        m_tp1 = m_t * m_tp1
+        torch.addr(1.0, m_tp1, 1.0, w_tm1[0], a_t[0])
+        return m_tp1
 
     def forward(self, x):
-        return self.write_to_memory()
+        pass
 
 
 class ReadHead(Head):
     def __init__(self, ctrlr, num_shifts=3, memory_dims=(128, 20)):
         super(ReadHead, self).__init__(ctrlr, num_shifts, memory_dims)
 
-    def read_from_memory(self):
+    def read_from_memory(self, w_tm1, m_t):
         r_t = []
 
         for i in range(self.memory_dims[1]):
-            r_ti = self.w_tm1.dot(self.m_t[:, i])
+            r_ti = w_tm1.dot(m_t[:, i])
             r_t.append(r_ti.data[0])
 
         r_t = Variable(torch.FloatTensor(r_t))
@@ -121,16 +114,6 @@ class ReadHead(Head):
         return r_t
 
     def forward(self, x):
-        return self.read_from_memory()
+        pass
 
-
-if __name__ == "__main__":
-    controller = FeedForwardController(num_inputs=5, num_hidden=10, num_outputs=3, num_read_heads=2)
-    controller.hidden = Variable(torch.FloatTensor(1, 1, 10, 1).fill_(1000.))
-
-    head = ReadHead(controller)
-    writehead = WriteHead(controller)
-    head.get_weights()
-    print(head.read_from_memory())
-    print(writehead.write_to_memory())
 
