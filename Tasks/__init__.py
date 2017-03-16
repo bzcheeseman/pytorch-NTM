@@ -1,5 +1,5 @@
 #
-# Created by Aman LaChapelle on 3/11/17.
+# Created by Aman LaChapelle on 3/16/17.
 #
 # pytorch-NTM
 # Copyright (c) 2017 Aman LaChapelle
@@ -21,7 +21,6 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  '''
 
-__all__ = ["flat_features", "similarities"]
+__all__ = ["copy"]
 
-from .flatfeatures import num_flat_features
-from .similarities import cosine_similarity
+from .copy import generate_copy_data

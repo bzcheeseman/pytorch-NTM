@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as Funct
 from torch.autograd import Variable
 
-from Utils.flat_features import *
+from Utils import num_flat_features
 
 
 class FeedForwardController(nn.Module):
@@ -32,7 +32,7 @@ class FeedForwardController(nn.Module):
         self.num_write_heads = 1
         self.memory_dims = memory_dims
 
-        self.hidden = Variable(torch.rand(1, 1, num_hidden, 1))
+        self.hidden = Variable(torch.rand(1, 1, num_hidden, 1), requires_grad=True)
 
         self.in_to_hid = nn.Linear(self.num_inputs, self.num_hidden)
         self.read_to_hid = nn.Linear(self.num_read_heads*self.memory_dims[1], self.num_hidden)
@@ -42,7 +42,7 @@ class FeedForwardController(nn.Module):
         x = x.view(-1, num_flat_features(x))
         read = read.view(-1, self.memory_dims[1])
 
-        self.hidden = Funct.relu(self.in_to_hid(x) + self.read_to_hid(read), True)
+        self.hidden = Funct.relu(self.in_to_hid(x.cpu()) + self.read_to_hid(read.cpu()), True)
         return self.hidden
 
     def forward(self, x):

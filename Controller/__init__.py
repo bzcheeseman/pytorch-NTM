@@ -22,5 +22,6 @@
  '''
 
 
-# read/write heads
+__all__ = ["convcontroller", "feedforwardcontroller", "recurrentcontroller"]
 
+from .feedforwardcontroller import FeedForwardController

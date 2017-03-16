@@ -22,4 +22,6 @@
  '''
 
 
-# LSTM controller, feedforward controller
+__all__ = ['Head', 'Memory']
+
+from .head import ReadHead, WriteHead
