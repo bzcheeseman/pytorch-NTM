@@ -21,7 +21,8 @@ class NTM(nn.Module):
                  memory,
                  control,
                  read_head,
-                 write_head):
+                 write_head,
+                 batch_size):
         super(NTM, self).__init__()
 
         self.memory = memory
@@ -29,7 +30,7 @@ class NTM(nn.Module):
         self.read_head = read_head
         self.write_head = write_head
 
-        weights = torch.FloatTensor(1, self.memory.memory_dims[0]).zero_()
+        weights = torch.FloatTensor(batch_size, self.memory.memory_dims[0]).zero_()
         weights[0, 0] = 1.0
 
         self.wr = Variable(weights)
@@ -73,9 +74,11 @@ if __name__ == "__main__":
     read_head = ReadHead(controller)
     write_head = WriteHead(controller)
 
-    test_data = gen_sample_data(2, 5, 5)
+    batch = 10
 
-    ntm = NTM(memory, controller, read_head, write_head)
-    ntm(test_data)
+    test_data = gen_sample_data(batch, 5, 5)
+
+    ntm = NTM(memory, controller, read_head, write_head, batch_size=batch)
+    print(ntm(test_data))
 
 

@@ -51,22 +51,31 @@ class Head(nn.Module):
         s_t = Funct.softmax(self.shift(hidden))  # vector size (num_shifts)
         gamma_t = 1.0 + Funct.relu(self.gamma(hidden), inplace=True)  # number
 
+        batch_size = k_t.size()[0]
+
         # TODO: content addressing
         beta_t = beta_t.repeat(1, self.memory_dims[0])
-        print(k_t)
-        print(m_t)
         w_c = Funct.softmax(beta_t * similarities.cosine_similarity(k_t, m_t))  # vector size (memory_dims[0])
+        # print(w_c.size())
 
         # TODO: Interpolation
         g_tr = g_t.repeat(1, self.memory_dims[0])
         w_g = g_tr * w_c + (1.0 - g_tr) * w_tm1  # vector size (memory_dims[0]) (i think)
+        # print(w_g.size())
 
         # TODO: Conv Shift
-        w_tilde = Variable(torch.FloatTensor(np.convolve(w_g.data.numpy()[0], s_t.data.numpy()[0], mode="same")))
+        w_tilde = []
+        for i in range(w_g.size()[0]):
+            w_tilde.append(np.convolve(w_g[i].data.numpy(), s_t.data.numpy()[0], mode="same"))
+        w_tilde = np.array(w_tilde)
+        w_tilde = Variable(torch.FloatTensor(w_tilde))
+        # print(w_tilde.size())
+
 
         # TODO: Sharpening
         w = w_tilde.pow(gamma_t.data[0, 0])
-        w /= torch.sum(w).repeat(w.size()[0])
+        w /= torch.sum(w).repeat(w.size()[0], w.size()[1])
+        # print(w.size())
 
         return w
 
@@ -85,7 +94,10 @@ class WriteHead(Head):
         self.hid_to_add = nn.Linear(self.controller.num_hidden, self.memory_dims[1])
 
     def write_to_memory(self, h_t, w_tm1, m_t):
-        hidden = h_t.permute(0, 1, 3, 2)[0, 0]
+        try:
+            hidden = h_t.permute(0, 1, 3, 2)[0, 0]
+        except AssertionError:
+            hidden = h_t
         e_t = Funct.hardtanh(self.hid_to_erase(hidden), min_val=0.0, max_val=1.0, inplace=True)
         a_t = torch.clamp(self.hid_to_add(hidden), min=0.0, max=1.0)
         m_tp1 = Variable(torch.FloatTensor(*m_t.size()).fill_(1.0))
@@ -106,8 +118,11 @@ class ReadHead(Head):
         r_t = []
 
         for i in range(self.memory_dims[1]):
-            r_ti = w_tm1.dot(m_t[:, i])
-            r_t.append(r_ti.data[0])
+            r_ti = []
+            for j in range(w_tm1.size()[0]):
+                r_tij = w_tm1[j].dot(m_t[:, i])
+                r_ti.append(r_tij.data[0])
+            r_t.append(r_ti)
 
         r_t = Variable(torch.FloatTensor(r_t))
 

@@ -34,18 +34,15 @@ class FeedForwardController(nn.Module):
 
         self.hidden = Variable(torch.rand(1, 1, num_hidden, 1))
 
-        # self.read_heads = []
-        # self.write_heads = []
-
         self.in_to_hid = nn.Linear(self.num_inputs, self.num_hidden)
         self.read_to_hid = nn.Linear(self.num_read_heads*self.memory_dims[1], self.num_hidden)
 
     def step(self, x, read):
         x.contiguous()
         x = x.view(-1, num_flat_features(x))
-        read = read.view(1, self.memory_dims[1])
+        read = read.view(-1, self.memory_dims[1])
 
-        self.hidden = Funct.relu(self.in_to_hid(x) + self.read_to_hid(read).repeat(x.size()[0], 1), True)
+        self.hidden = Funct.relu(self.in_to_hid(x) + self.read_to_hid(read), True)
         return self.hidden
 
     def forward(self, x):
