@@ -6,6 +6,9 @@
 # Full license at pytorch-NTM/LICENSE.txt
 #
 
+# Copied from pytorch tutorial directly with minimal changes.
+
+
 def num_flat_features(x):
     size = x.size()[1:]  # all dimensions except the batch dimension
     num_features = 1
