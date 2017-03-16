@@ -15,8 +15,8 @@ def cosine_similarity(x, y, epsilon=1e-6):
     z = []
 
     for i in range(y.size()[0]):
-        z_i = x.dot(Variable(y[i, :]))
+        z_i = x.dot(y[i, :])
         z_i /= torch.sqrt(torch.sum(x.pow(2)) * torch.sum(y[i, :].pow(2)) + epsilon)
         z.append(z_i.data[0])
 
-    return torch.FloatTensor(z)
+    return Variable(torch.FloatTensor(z))

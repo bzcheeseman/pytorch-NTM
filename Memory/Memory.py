@@ -14,7 +14,8 @@ from torch.autograd import Variable
 
 
 class Memory(nn.Module):
-    def __init__(self, memory_dims=(128, 20)):
+    def __init__(self,
+                 memory_dims=(128, 20)):
         super(Memory, self).__init__()
 
         self.memory = Variable(torch.FloatTensor(memory_dims[0], memory_dims[1]).fill_(1e-6))

@@ -30,7 +30,7 @@ class FeedForwardController(nn.Module):
         self.num_write_heads = 1
         self.memory_dims = memory_dims
 
-        self.hidden = Variable(torch.rand([1, 1, num_hidden, 1]))
+        self.hidden = Variable(torch.rand(1, 1, num_hidden, 1))
 
         # self.read_heads = []
         # self.write_heads = []
