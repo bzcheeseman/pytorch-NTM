@@ -47,6 +47,7 @@ class NTM(nn.Module):
         x = x.permute(1, 0, 2, 3)  # (time_steps, batch_size, features)
 
         def step(x_t):
+            # m_t = self.memory.memory
             m_t = self.write_head.write_to_memory(self.controller.hidden, self.ww, self.memory.memory)
 
             r_t = self.read_head.read_from_memory(self.wr, m_t)
@@ -77,53 +78,67 @@ def gen_sample_data(batch_size, time_steps, net_inputs):
     return out
 
 if __name__ == "__main__":
-    controller = FeedForwardController(num_inputs=8, num_hidden=8, num_outputs=8, num_read_heads=1)
+    # Create all the components - the weights should get saved inside the layer
+
+    batch = 10
+
+    controller = FeedForwardController(num_inputs=8, num_hidden=8, batch_size=batch, num_read_heads=1)
     memory = Memory()
     read_head = ReadHead(controller)
     write_head = WriteHead(controller)
 
-    batch = 10
-
     test_data, test_labels = generate_copy_data((8, 1), 5)
 
     test = TensorDataset(test_data, test_labels)
-    # print(test[1])
 
-    data_loader = DataLoader(test, batch_size=batch, shuffle=True, num_workers=1)
+    data_loader = DataLoader(test, batch_size=batch, shuffle=True, num_workers=4)
 
     ntm = NTM(memory, controller, read_head, write_head, batch_size=batch)
 
-    for parameter in ntm.parameters():
-        parameter.requires_grad = True
-
     ntm.train()
 
-    max_epochs = 100
+    max_epochs = 1
     criterion = nn.MSELoss()
-    optimizer = optim.SGD(ntm.parameters(), lr=0.01)
+    optimizer = optim.Adam(ntm.parameters(), lr=0.01, weight_decay=0.005)
 
     for epoch in range(max_epochs+1):
         running_loss = 0.0
 
-        for i, data in enumerate(data_loader, 0):  # recursion limit reached? wtf?
+        for i, data in enumerate(data_loader, 0):
             inputs, labels = data
             inputs = Variable(inputs.cuda())
             labels = Variable(labels.cuda())
 
             ntm.zero_grad()
             outputs = ntm(inputs)
+            outputs.requires_grad = True
 
             loss = criterion(outputs.cpu(), labels.cpu())
-            loss.backward()  # no graph noeds that require computing gradients? wtf?
+            loss.backward()
             optimizer.step()
 
             running_loss += loss.data[0]
 
-            if i % 2000 == 1999:  # print every 2000 mini-batches
-                print('[%d, %5d] loss: %.3f' % (epoch + 1, i + 1, running_loss / 2000))
+            if i % 50 == 49:
+                print('[%d, %5d] loss: %.3f' % (epoch + 1, i + 1, running_loss / 50))
                 running_loss = 0.0
 
     print("Finished Training")
+
+    # data, labels = generate_copy_data((8, 1), 10)
+    # test = TensorDataset(data, labels)
+    # data_loader = DataLoader(test, batch_size=batch, shuffle=True, num_workers=4)
+    #
+    # total_loss = 0.0
+    # for i, data in enumerate(data_loader, 0):
+    #     inputs, labels = data
+    #     inputs = Variable(inputs.cuda())
+    #     labels = Variable(labels.cuda())
+    #
+    #     outputs = ntm(inputs)
+    #     total_loss += len(data) * criterion(outputs, labels).data
+    #
+    # print("Total Loss: {}".format(total_loss / len(data_loader)))
 
 
 

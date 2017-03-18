@@ -10,16 +10,9 @@ import torch
 from torch.autograd import Variable
 
 
-def cosine_similarity(x, y, epsilon=1e-6):  # TODO: Edit for batch size in x
+def cosine_similarity(x, y, epsilon=1e-6):
 
-    z = []
+    z = torch.mm(x.cuda(), y.transpose(0, 1).cuda())
+    z /= torch.sqrt(x.norm(2).pow(2) * y.norm(2).pow(2) + epsilon).data[0]
 
-    for i in range(y.size()[0]):
-        z_i = []
-        for j in range(x.size()[0]):
-            z_ij = x[j].dot(y[i, :])
-            z_ij /= torch.sqrt(torch.sum(x[j].pow(2)) * torch.sum(y[i, :].pow(2)) + epsilon)
-            z_i.append(z_ij.data[0])
-        z.append(z_i)
-
-    return Variable(torch.FloatTensor(z))
+    return z

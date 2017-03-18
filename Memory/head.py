@@ -61,22 +61,22 @@ class Head(nn.Module):
         # gamma_t.cpu()
 
         # TODO: content addressing
-        beta_t = beta_t.repeat(1, self.memory_dims[0])
-        w_c = Funct.softmax(beta_t * cosine_similarity(k_t, m_t))  # vector size (memory_dims[0])
+        beta_tr = beta_t.repeat(1, self.memory_dims[0])
+        w_c = Funct.softmax(cosine_similarity(k_t, m_t) * beta_tr.cuda())
+        # vector size (memory_dims[0])
         # print(w_c.size())
 
         # TODO: Interpolation
         g_tr = g_t.repeat(1, self.memory_dims[0])
-        w_g = g_tr.cpu() * w_c.cpu() + (1.0 - g_tr.cpu()) * w_tm1.cpu()  # vector size (memory_dims[0]) (i think)
+        w_g = g_tr.cuda() * w_c + (1.0 - g_tr.cuda()) * w_tm1  # vector size (memory_dims[0]) (i think)
         # print(w_g.size())
 
         # TODO: Conv Shift
-        w_tilde = []
-        for i in range(w_g.size()[0]):
-            w_tilde.append(np.convolve(w_g[i].data.numpy(), s_t.data.numpy()[0], mode="same"))
-        w_tilde = np.array(w_tilde)
-        w_tilde = Variable(torch.FloatTensor(w_tilde))
-        # print(w_tilde.size())
+        # print(w_g.size())
+        # print(s_t.size())
+        padding = (0, self.num_shifts//2)
+        w_tilde = Funct.conv1d(w_g, s_t.cuda(), stride=(0, 1))
+        print(w_tilde.size())
 
 
         # TODO: Sharpening
@@ -103,16 +103,20 @@ class WriteHead(Head):
     def write_to_memory(self, h_t, w_tm1, m_t):
         hidden = h_t.view(-1, num_flat_features(h_t)).cpu()
 
-        e_t = Funct.hardtanh(self.hid_to_erase(hidden), min_val=0.0, max_val=1.0, inplace=True)
+        e_t = Funct.hardtanh(self.hid_to_erase(hidden), min_val=0.0, max_val=1.0, inplace=True).cuda()
         a_t = torch.clamp(self.hid_to_add(hidden), min=0.0, max=1.0)
-        m_tp1 = Variable(torch.FloatTensor(*m_t.size()).fill_(1.0))
-        torch.addr(1.0, m_tp1.cpu(), -1.0, w_tm1[0].cpu(), e_t[0].cpu())
-        m_tp1 = m_t * m_tp1
-        torch.addr(1.0, m_tp1.cpu(), 1.0, w_tm1[0].cpu(), a_t[0].cpu())
 
-        m_tp1.cuda()
+        # both have batch size also...
+        m_tp1 = torch.FloatTensor(*m_t.size()).zero_()
+        print((1.0 - e_t * w_tm1))
+        for i in range(self.memory_dims[0]):
+            m_tp1[i] = m_t[i] * (1.0 - e_t * w_tm1[:, i])
 
-        return m_tp1
+
+        print(e_t.size())
+        raise NameError
+
+        m_tp1 = m_t
 
     def forward(self, x):
         pass
@@ -123,16 +127,8 @@ class ReadHead(Head):
         super(ReadHead, self).__init__(ctrlr, num_shifts, memory_dims)
 
     def read_from_memory(self, w_tm1, m_t):
-        r_t = []
 
-        for i in range(self.memory_dims[1]):
-            r_ti = []
-            for j in range(w_tm1.size()[0]):
-                r_tij = w_tm1[j].cpu().dot(m_t[:, i])
-                r_ti.append(r_tij.data[0])
-            r_t.append(r_ti)
-
-        r_t = Variable(torch.FloatTensor(r_t))
+        r_t = torch.mm(w_tm1.cuda(), m_t.cuda())
 
         return r_t
 
