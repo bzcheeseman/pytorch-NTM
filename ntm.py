@@ -32,10 +32,10 @@ class NTM(nn.Module):
                  num_outputs):
         super(NTM, self).__init__()
 
-        self.memory = memory.cpu()
-        self.controller = control.cpu()
-        self.read_head = read_head.cpu()
-        self.write_head = write_head.cpu()
+        self.memory = memory
+        self.controller = control
+        self.read_head = read_head
+        self.write_head = write_head
 
         weights = torch.FloatTensor(batch_size, self.memory.memory_dims[0]).zero_()
         weights[0, 0] = 1.0
@@ -49,31 +49,25 @@ class NTM(nn.Module):
 
         x = x.permute(1, 0, 2, 3)  # (time_steps, batch_size, features_rows, features_cols)
 
-        def step(x_t):
-            # m_t = self.memory.memory
-            m_t = self.write_head.write_to_memory(self.controller.hidden, self.ww, self.memory.memory)
+        outs = []  # time steps in here
 
-            r_t = self.read_head.read_from_memory(self.wr, m_t)
+        for i in range(x.size()[0]):
+            m_t = self.write_head(self.controller.hidden, self.ww, self.memory.memory)  # write to memory
 
-            h_t = self.controller.step(x_t, r_t)
+            r_t = self.read_head(self.controller.hidden, self.wr, m_t)  # read from memory
 
-            wr_t = self.read_head.get_weights(h_t, self.wr, m_t)
-            ww_t = self.write_head.get_weights(h_t, self.ww, m_t)
+            h_t = self.controller.step(x[i], r_t)  # stores h_t in self.controller.hidden
+
+            wr_t = self.read_head(h_t, self.wr, m_t, get_weights=True)
+            ww_t = self.write_head(h_t, self.ww, m_t, get_weights=True)
 
             self.memory.memory = m_t
             self.wr = wr_t
             self.ww = ww_t
 
-            return h_t
+            outs.append(self.output(h_t))
 
-        hids = []  # time steps in here
-
-        for i in range(x.size()[0]):
-            hids.append(self.output(step(x[i])).data.numpy())
-
-        hids = np.array(hids).swapaxes(0, 1)
-        hids = Variable(torch.FloatTensor(hids))
-        return hids
+        return torch.cat(outs)
 
 
 def gen_sample_data(batch_size, time_steps, net_inputs):
@@ -102,7 +96,7 @@ if __name__ == "__main__":
 
     max_epochs = 100
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(ntm.parameters(), lr=0.001, weight_decay=0.005)
+    optimizer = optim.SGD(ntm.parameters(), lr=0.01, weight_decay=0.005)
 
     for epoch in range(max_epochs+1):
         running_loss = 0.0
@@ -114,7 +108,7 @@ if __name__ == "__main__":
 
             ntm.zero_grad()
             outputs = ntm(inputs)
-            outputs.requires_grad = True
+            # outputs.requires_grad = True
 
             loss = criterion(outputs, labels)
             loss.backward()
@@ -122,8 +116,8 @@ if __name__ == "__main__":
 
             running_loss += loss.data[0]
 
-            if i % 500 == 499:
-                print('[%d, %5d] average loss: %.3f' % (epoch + 1, i + 1, running_loss / 500))
+            if i % 100 == 99:
+                print('[%d, %5d] average loss: %.3f' % (epoch + 1, i + 1, running_loss / 100))
                 running_loss = 0.0
 
     print("Finished Training")

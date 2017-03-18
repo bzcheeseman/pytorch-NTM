@@ -43,7 +43,8 @@ class Head(nn.Module):
         # Gamma - 1 + Relu
         self.gamma = nn.Linear(self.controller.num_hidden, 1)
 
-    def get_weights(self, h_t, w_tm1, m_t):
+    def forward(self, h_t, w_tm1, m_t, get_weights=True):
+
         hidden = h_t.view(-1, num_flat_features(h_t))
         k_t = torch.clamp(self.key(hidden), 0, 1)  # vector size (memory_dims[1])
         beta_t = Funct.relu(self.beta(hidden), inplace=True)  # number
@@ -53,40 +54,35 @@ class Head(nn.Module):
 
         batch_size = k_t.size()[0]
 
-        # TODO: content addressing
+        # None of these need to be trained - constant function
         beta_tr = beta_t.repeat(1, self.memory_dims[0])
-        w_c = Funct.softmax(cosine_similarity(k_t, m_t) * beta_tr)
-        # vector size (memory_dims[0])
+        w_c = Funct.softmax(cosine_similarity(k_t, m_t) * beta_tr)  # vector size (memory_dims[0])
         # print(w_c.size())
 
-        # TODO: Interpolation
+        # None of these need to be trained - constant function
         g_tr = g_t.repeat(1, self.memory_dims[0])
         w_g = g_tr * w_c + (1.0 - g_tr) * w_tm1  # vector size (memory_dims[0]) (i think)
         # print(w_g.size())
 
-        # TODO: Conv Shift
+        # None of these need to be trained - constant function
         conv_filter = s_t.unsqueeze(1).unsqueeze(2)
         w_g_padded = w_g.unsqueeze(1).unsqueeze(2)
         pad = (self.num_shifts // 2, (self.num_shifts - 1) // 2)
 
         conv = Funct.conv2d(w_g_padded, conv_filter, padding=pad)
 
-        w_tilde = conv[:batch_size, 0, 0, :].contiguous()
-        # w_tilde = w_tilde[:, 0].contiguous()
+        w_tilde = conv[:batch_size, :batch_size, 0, :]
+        w_tilde = w_tilde[:, 0].contiguous()
         w_tilde = w_tilde.view(batch_size, self.memory_dims[0])
         # print(w_tilde.size())
 
-
-        # TODO: Sharpening
+        # None of these need to be trained - constant function
         gamma_tr = gamma_t.repeat(1, self.memory_dims[0])
         w = (w_tilde + 1e-6).pow(gamma_tr)
         w /= torch.sum(w, dim=1).repeat(1, self.memory_dims[0])
         # print(w.size())
 
         return w
-
-    def forward(self, x):
-        pass
 
 
 class WriteHead(Head):
@@ -99,8 +95,8 @@ class WriteHead(Head):
         # Add - Clipped Linear
         self.hid_to_add = nn.Linear(self.controller.num_hidden, self.memory_dims[1])
 
-    def write_to_memory(self, h_t, w_tm1, m_t):
-        hidden = h_t.view(-1, num_flat_features(h_t)).cpu()
+    def _write_to_mem(self, h_t, w_tm1, m_t):
+        hidden = h_t.view(-1, num_flat_features(h_t))
 
         e_t = Funct.hardtanh(self.hid_to_erase(hidden), min_val=0.0, max_val=1.0, inplace=True)
         a_t = torch.clamp(self.hid_to_add(hidden), min=0.0, max=1.0)
@@ -116,21 +112,29 @@ class WriteHead(Head):
 
         return m_tp1
 
-    def forward(self, x):
-        pass
+    def forward(self, h_t, w_tm1, m_t, get_weights=False):
+
+        if get_weights:
+            return super(WriteHead, self).forward(h_t, w_tm1, m_t)
+        else:
+            return self._write_to_mem(h_t, w_tm1, m_t)
 
 
 class ReadHead(Head):
     def __init__(self, ctrlr, num_shifts=3, memory_dims=(128, 20)):
         super(ReadHead, self).__init__(ctrlr, num_shifts, memory_dims)
 
-    def read_from_memory(self, w_tm1, m_t):
-
+    def _read_from_mem(self, w_tm1, m_t):
         r_t = torch.mm(w_tm1, m_t)
 
         return r_t
 
-    def forward(self, x):
-        pass
+    def forward(self, h_t, w_tm1, m_t, get_weights=False):
+
+        if get_weights:
+            return super(ReadHead, self).forward(h_t, w_tm1, m_t)
+        else:
+            return self._read_from_mem(w_tm1, m_t)
+
 
 
