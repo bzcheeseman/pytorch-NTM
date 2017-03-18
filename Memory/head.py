@@ -53,35 +53,34 @@ class Head(nn.Module):
 
         batch_size = k_t.size()[0]
 
-        # hidden.cpu()
-        # k_t.cpu()
-        # beta_t.cpu()
-        # g_t.cpu()
-        # s_t.cpu()
-        # gamma_t.cpu()
-
         # TODO: content addressing
         beta_tr = beta_t.repeat(1, self.memory_dims[0])
-        w_c = Funct.softmax(cosine_similarity(k_t, m_t) * beta_tr.cuda())
+        w_c = Funct.softmax(cosine_similarity(k_t, m_t) * beta_tr)
         # vector size (memory_dims[0])
         # print(w_c.size())
 
         # TODO: Interpolation
         g_tr = g_t.repeat(1, self.memory_dims[0])
-        w_g = g_tr.cuda() * w_c + (1.0 - g_tr.cuda()) * w_tm1  # vector size (memory_dims[0]) (i think)
+        w_g = g_tr * w_c + (1.0 - g_tr) * w_tm1  # vector size (memory_dims[0]) (i think)
         # print(w_g.size())
 
         # TODO: Conv Shift
-        # print(w_g.size())
-        # print(s_t.size())
-        padding = (0, self.num_shifts//2)
-        w_tilde = Funct.conv1d(w_g, s_t.cuda(), stride=(0, 1))
-        print(w_tilde.size())
+        conv_filter = s_t.unsqueeze(1).unsqueeze(2)
+        w_g_padded = w_g.unsqueeze(1).unsqueeze(2)
+        pad = (self.num_shifts // 2, (self.num_shifts - 1) // 2)
+
+        conv = Funct.conv2d(w_g_padded, conv_filter, padding=pad)
+
+        w_tilde = conv[:batch_size, 0, 0, :].contiguous()
+        # w_tilde = w_tilde[:, 0].contiguous()
+        w_tilde = w_tilde.view(batch_size, self.memory_dims[0])
+        # print(w_tilde.size())
 
 
         # TODO: Sharpening
-        w = w_tilde.pow(gamma_t.data[0, 0])
-        w /= torch.sum(w).repeat(w.size()[0], w.size()[1])
+        gamma_tr = gamma_t.repeat(1, self.memory_dims[0])
+        w = (w_tilde + 1e-6).pow(gamma_tr)
+        w /= torch.sum(w, dim=1).repeat(1, self.memory_dims[0])
         # print(w.size())
 
         return w
@@ -103,20 +102,19 @@ class WriteHead(Head):
     def write_to_memory(self, h_t, w_tm1, m_t):
         hidden = h_t.view(-1, num_flat_features(h_t)).cpu()
 
-        e_t = Funct.hardtanh(self.hid_to_erase(hidden), min_val=0.0, max_val=1.0, inplace=True).cuda()
+        e_t = Funct.hardtanh(self.hid_to_erase(hidden), min_val=0.0, max_val=1.0, inplace=True)
         a_t = torch.clamp(self.hid_to_add(hidden), min=0.0, max=1.0)
 
-        # both have batch size also...
         m_tp1 = torch.FloatTensor(*m_t.size()).zero_()
-        print((1.0 - e_t * w_tm1))
-        for i in range(self.memory_dims[0]):
-            m_tp1[i] = m_t[i] * (1.0 - e_t * w_tm1[:, i])
 
+        for i in range(e_t.size()[0]):
+            temp = Variable(torch.zeros(*m_t.size()))
+            torch.addr(temp.data, w_tm1[i].data, e_t[i].data)
+            m_tp1 = m_t * (1.0 - temp)
+            torch.addr(0.0, temp.data, 1.0, w_tm1[i].data, a_t[i].data)
+            m_tp1 += temp
 
-        print(e_t.size())
-        raise NameError
-
-        m_tp1 = m_t
+        return m_tp1
 
     def forward(self, x):
         pass
@@ -128,7 +126,7 @@ class ReadHead(Head):
 
     def read_from_memory(self, w_tm1, m_t):
 
-        r_t = torch.mm(w_tm1.cuda(), m_t.cuda())
+        r_t = torch.mm(w_tm1, m_t)
 
         return r_t
 

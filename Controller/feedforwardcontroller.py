@@ -42,7 +42,7 @@ class FeedForwardController(nn.Module):
         x = x.view(-1, num_flat_features(x))
         read = read.view(-1, self.memory_dims[1])
 
-        self.hidden = Funct.relu(self.in_to_hid(x.cpu()) + self.read_to_hid(read.cpu()), inplace=True)
+        self.hidden = Funct.relu(self.in_to_hid(x) + self.read_to_hid(read), inplace=True)
         return self.hidden
 
     def forward(self, x):

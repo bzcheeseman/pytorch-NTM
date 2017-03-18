@@ -28,23 +28,26 @@ class NTM(nn.Module):
                  control,
                  read_head,
                  write_head,
-                 batch_size):
+                 batch_size,
+                 num_outputs):
         super(NTM, self).__init__()
 
-        self.memory = memory.cuda()
-        self.controller = control.cuda()
+        self.memory = memory.cpu()
+        self.controller = control.cpu()
         self.read_head = read_head.cpu()
         self.write_head = write_head.cpu()
 
         weights = torch.FloatTensor(batch_size, self.memory.memory_dims[0]).zero_()
         weights[0, 0] = 1.0
 
-        self.wr = Variable(weights).cuda()
-        self.ww = Variable(weights).cuda()
+        self.wr = Variable(weights)
+        self.ww = Variable(weights)
+
+        self.output = nn.Linear(self.controller.num_hidden, num_outputs)
 
     def forward(self, x):
 
-        x = x.permute(1, 0, 2, 3)  # (time_steps, batch_size, features)
+        x = x.permute(1, 0, 2, 3)  # (time_steps, batch_size, features_rows, features_cols)
 
         def step(x_t):
             # m_t = self.memory.memory
@@ -52,7 +55,7 @@ class NTM(nn.Module):
 
             r_t = self.read_head.read_from_memory(self.wr, m_t)
 
-            h_t = self.controller.step(x_t.cuda(), r_t.cuda())
+            h_t = self.controller.step(x_t, r_t)
 
             wr_t = self.read_head.get_weights(h_t, self.wr, m_t)
             ww_t = self.write_head.get_weights(h_t, self.ww, m_t)
@@ -63,10 +66,10 @@ class NTM(nn.Module):
 
             return h_t
 
-        hids = []
+        hids = []  # time steps in here
 
         for i in range(x.size()[0]):
-            hids.append(step(x[i]).data.numpy())
+            hids.append(self.output(step(x[i])).data.numpy())
 
         hids = np.array(hids).swapaxes(0, 1)
         hids = Variable(torch.FloatTensor(hids))
@@ -82,63 +85,63 @@ if __name__ == "__main__":
 
     batch = 10
 
-    controller = FeedForwardController(num_inputs=8, num_hidden=8, batch_size=batch, num_read_heads=1)
+    controller = FeedForwardController(num_inputs=8, num_hidden=100, batch_size=batch, num_read_heads=1)
     memory = Memory()
     read_head = ReadHead(controller)
     write_head = WriteHead(controller)
 
-    test_data, test_labels = generate_copy_data((8, 1), 5)
+    test_data, test_labels = generate_copy_data((8, 1), 13)
 
     test = TensorDataset(test_data, test_labels)
 
     data_loader = DataLoader(test, batch_size=batch, shuffle=True, num_workers=4)
 
-    ntm = NTM(memory, controller, read_head, write_head, batch_size=batch)
+    ntm = NTM(memory, controller, read_head, write_head, batch_size=batch, num_outputs=8)
 
     ntm.train()
 
-    max_epochs = 1
+    max_epochs = 100
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(ntm.parameters(), lr=0.01, weight_decay=0.005)
+    optimizer = optim.Adam(ntm.parameters(), lr=0.001, weight_decay=0.005)
 
     for epoch in range(max_epochs+1):
         running_loss = 0.0
 
         for i, data in enumerate(data_loader, 0):
             inputs, labels = data
-            inputs = Variable(inputs.cuda())
-            labels = Variable(labels.cuda())
+            inputs = Variable(inputs, requires_grad=True)
+            labels = Variable(labels)
 
             ntm.zero_grad()
             outputs = ntm(inputs)
             outputs.requires_grad = True
 
-            loss = criterion(outputs.cpu(), labels.cpu())
+            loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
 
             running_loss += loss.data[0]
 
-            if i % 50 == 49:
-                print('[%d, %5d] loss: %.3f' % (epoch + 1, i + 1, running_loss / 50))
+            if i % 500 == 499:
+                print('[%d, %5d] average loss: %.3f' % (epoch + 1, i + 1, running_loss / 500))
                 running_loss = 0.0
 
     print("Finished Training")
 
-    # data, labels = generate_copy_data((8, 1), 10)
-    # test = TensorDataset(data, labels)
-    # data_loader = DataLoader(test, batch_size=batch, shuffle=True, num_workers=4)
-    #
-    # total_loss = 0.0
-    # for i, data in enumerate(data_loader, 0):
-    #     inputs, labels = data
-    #     inputs = Variable(inputs.cuda())
-    #     labels = Variable(labels.cuda())
-    #
-    #     outputs = ntm(inputs)
-    #     total_loss += len(data) * criterion(outputs, labels).data
-    #
-    # print("Total Loss: {}".format(total_loss / len(data_loader)))
+    data, labels = generate_copy_data((8, 1), 13)
+    test = TensorDataset(data, labels)
+    data_loader = DataLoader(test, batch_size=batch, shuffle=True, num_workers=4)
+
+    total_loss = 0.0
+    for i, data in enumerate(data_loader, 0):
+        inputs, labels = data
+        inputs = Variable(inputs.cuda())
+        labels = Variable(labels.cuda())
+
+        outputs = ntm(inputs)
+        total_loss += len(data) * criterion(outputs, labels).data
+
+    print("Total Loss: {}".format(total_loss / len(data_loader)))
 
 
 
