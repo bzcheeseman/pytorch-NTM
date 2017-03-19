@@ -33,29 +33,33 @@ class NTM(nn.Module):
         super(NTM, self).__init__()
 
         self.memory_dims = memory_dims
-        self.memory = Variable(torch.FloatTensor(memory_dims[0], memory_dims[1]).fill_(1e-6))
+        self.memory = Variable(torch.FloatTensor(memory_dims[0], memory_dims[1]).fill_(5e-6))
         self.controller = control
         self.read_head = read_head
         self.write_head = write_head
+        self.batch_size = batch_size
 
-        self.wr = Variable(torch.eye(batch_size, self.memory_dims[0]))
-        self.ww = Variable(torch.eye(batch_size, self.memory_dims[0]))
+        self.wr = Variable(torch.eye(self.batch_size, self.memory_dims[0]))
+        self.ww = Variable(torch.eye(self.batch_size, self.memory_dims[0]))
 
         self.output = nn.Linear(self.controller.num_hidden, num_outputs)
 
-        self.hidden = Variable(torch.FloatTensor(batch_size, 1, num_hidden).normal_(0.0, 1. / num_hidden))
+        self.hidden = Variable(torch.FloatTensor(batch_size, 1,
+                                        self.controller.num_hidden).normal_(0.0, 1. / self.controller.num_hidden))
 
     def forward(self, x):
+        self.wr = Variable(torch.eye(self.batch_size, self.memory_dims[0]))
+        self.ww = Variable(torch.eye(self.batch_size, self.memory_dims[0]))
 
         x = x.permute(1, 0, 2, 3)  # (time_steps, batch_size, features_rows, features_cols)
 
         outs = []  # time steps in here
 
-        for i in range(x.size()[0]):
+        for i in range(x.size()[0]):  # still having problems with read/write weights? Might just be small I guess...
             m_t = self.write_head(self.hidden, self.ww, self.memory, get_weights=False)  # write to memory
 
             # make sure it got written to somehow!
-            assert (not m_t.data.equal(self.memory.data)), "i = {}\nww = {}".format(i, self.ww)
+            # assert (not m_t.data.equal(self.memory.data)), "i = {}\nww = {}".format(i, self.ww)
 
             r_t = self.read_head(self.hidden, self.wr, m_t, get_weights=False)  # read from memory
 
@@ -82,20 +86,16 @@ class NTM(nn.Module):
         outs = torch.cat(outs).view(x.size()[1], x.size()[0], x.size()[2])
 
         self.hidden = Variable(self.hidden.data)
-        self.wr = Variable(self.wr.data)
-        self.ww = Variable(self.ww.data)
         self.memory = Variable(self.memory.data)
+        self.ww = Variable(self.ww.data)
+        self.wr = Variable(self.wr.data)
 
         return outs
 
-if __name__ == "__main__":
+
+def train_ntm(batch, num_inputs, seq_len, num_hidden):
 
     import matplotlib.pyplot as plt
-
-    batch = 1
-    num_inputs = 8
-    seq_len = 20
-    num_hidden = 100
 
     controller = FeedForwardController(num_inputs=num_inputs, num_hidden=num_hidden, batch_size=batch, num_read_heads=1)
     read_head = ReadHead(num_hidden)
@@ -108,6 +108,12 @@ if __name__ == "__main__":
     data_loader = DataLoader(test, batch_size=batch, shuffle=True, num_workers=4)
 
     ntm = NTM(controller, read_head, write_head, memory_dims=(128, 20), batch_size=batch, num_outputs=num_inputs)
+
+    try:
+        ntm.load_state_dict(torch.load("models/copy_seqlen_{}".format(seq_len)))
+    except FileNotFoundError or AttributeError:
+        pass
+
     start_mem = ntm.memory
 
     ntm.train()
@@ -116,8 +122,11 @@ if __name__ == "__main__":
     criterion = nn.MSELoss()
     optimizer = optim.RMSprop(ntm.parameters(), weight_decay=0.001)
 
-    for epoch in range(max_epochs+1):
+    for epoch in range(max_epochs):
         running_loss = 0.0
+
+        wr_plot_data = []
+        ww_plot_data = []
 
         for i, data in enumerate(data_loader, 0):
             inputs, labels = data
@@ -135,26 +144,40 @@ if __name__ == "__main__":
 
             running_loss += loss.data[0]
 
-            if i % 250 == 249:
-                print('[%d, %5d] average loss: %.3f' % (epoch + 1, i + 1, running_loss / 250))
-                if running_loss/250 <= 0.001:
+            wr_plot_data.append(torch.squeeze(ntm.wr[0]).data.numpy())
+            ww_plot_data.append(torch.squeeze(ntm.ww[0]).data.numpy())
+
+            if i % 5000 == 4999:
+                print('[%d, %5d] average loss: %.3f' % (epoch + 1, i + 1, running_loss / 5000))
+                if running_loss / 5000 <= 0.001:
                     break
-
-                if i % 1000 == 999:
-                    plt.matshow(ntm.memory.data.numpy())
-                    plt.savefig("plots/{}_{}_memory.png".format(epoch+1, i+1))
-                    plottable_input = torch.squeeze(inputs.data[0]).numpy()
-                    plottable_output = torch.squeeze(outputs.data[0]).numpy()
-                    plt.matshow(plottable_input)
-                    plt.savefig("plots/{}_{}_input.png".format(epoch+1, i+1))
-                    plt.matshow(plottable_output)
-                    plt.savefig("plots/{}_{}_net_output.png".format(epoch + 1, i + 1))
-
                 running_loss = 0.0
 
+                plt.imshow(ntm.memory.data.numpy())
+                plt.savefig("plots/{}_{}_memory.png".format(epoch + 1, i + 1))
+                plt.close()
+                plt.imshow(np.array(wr_plot_data))
+                plt.savefig("plots/{}_{}_read_weights.png".format(epoch + 1, i + 1))
+                plt.close()
+                plt.imshow(np.array(ww_plot_data))
+                plt.savefig("plots/{}_{}_write_weights.png".format(epoch + 1, i + 1))
+                plt.close()
+                plottable_input = torch.squeeze(inputs.data[0]).numpy()
+                plottable_output = torch.squeeze(outputs.data[0]).numpy()
+                plt.imshow(plottable_input)
+                plt.savefig("plots/{}_{}_input.png".format(epoch + 1, i + 1))
+                plt.close()
+                plt.imshow(plottable_output)
+                plt.savefig("plots/{}_{}_net_output.png".format(epoch + 1, i + 1))
+                plt.close()
+
+                wr_plot_data.clear()
+                ww_plot_data.clear()
+
+    torch.save(ntm.state_dict(), "models/copy_seqlen_{}".format(seq_len))
     print("Finished Training")
 
-    data, labels = generate_copy_data((8, 1), 10, 1000)
+    data, labels = generate_copy_data((8, 1), 2*seq_len, 1000)
 
     test = TensorDataset(data, labels)
     data_loader = DataLoader(test, batch_size=batch, shuffle=True, num_workers=2)
@@ -170,6 +193,86 @@ if __name__ == "__main__":
         total_loss += len(data) * criterion(outputs, labels).data
 
     print("Total Loss: {}".format(total_loss / len(data_loader)))
+
+
+def train_rnn(batch, num_inputs, seq_len, num_hidden):
+    import matplotlib.pyplot as plt
+    from Utils.benchmark import BenchRNN
+
+    test_data, test_labels = generate_copy_data((num_inputs, 1), seq_len)
+
+    test = TensorDataset(test_data, test_labels)
+
+    data_loader = DataLoader(test, batch_size=batch, shuffle=True, num_workers=4)
+
+    rnn = BenchRNN(batch, num_inputs, num_hidden, 1, num_outputs=num_inputs, bidirectional=False)
+
+    rnn.train()
+
+    max_epochs = 1
+    criterion = nn.MSELoss()
+    optimizer = optim.RMSprop(rnn.parameters(), weight_decay=0.001)
+
+    for epoch in range(max_epochs):
+        running_loss = 0.0
+
+        for i, data in enumerate(data_loader, 0):
+            inputs, labels = data
+            inputs = Variable(inputs)
+            labels = Variable(labels)
+
+            rnn.zero_grad()
+            outputs = rnn(inputs)
+            print(outputs)
+
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.data[0]
+
+            if i % 5000 == 4999:
+                print('[%d, %5d] average loss: %.3f' % (epoch + 1, i + 1, running_loss / 5000))
+                if running_loss / 5000 <= 0.001:
+                    break
+                running_loss = 0.0
+
+                plottable_input = torch.squeeze(inputs.data[0]).numpy()
+                plottable_output = torch.squeeze(outputs.data[0]).numpy()
+                plt.imshow(plottable_input)
+                plt.savefig("plots/{}_{}_input_rnn.png".format(epoch + 1, i + 1))
+                plt.close()
+                plt.imshow(plottable_output)
+                plt.savefig("plots/{}_{}_net_output_rnn.png".format(epoch + 1, i + 1))
+                plt.close()
+
+    print("Finished Training")
+
+    data, labels = generate_copy_data((8, 1), 2*seq_len, 1000)
+
+    test = TensorDataset(data, labels)
+    data_loader = DataLoader(test, batch_size=batch, shuffle=True, num_workers=2)
+
+    total_loss = 0.0
+    for i, data in enumerate(data_loader, 0):
+        inputs, labels = data
+        inputs.volatile = True
+        inputs = Variable(inputs)
+        labels = Variable(labels)
+
+        outputs = rnn(inputs)
+        total_loss += len(data) * criterion(outputs, labels).data
+
+    print("Total Loss: {}".format(total_loss / len(data_loader)))
+
+if __name__ == "__main__":
+
+    train_ntm(1, 8, 20, 100)  # final loss ~ 0.0356 for longer (2x) sequence
+    train_rnn(1, 8, 20, 100)
+
+
+
+
 
 
 

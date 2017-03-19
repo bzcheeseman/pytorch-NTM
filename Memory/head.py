@@ -56,7 +56,7 @@ class Head(nn.Module):
         batch_size = k_t.size()[0]
 
         # Content Addressing
-        beta_tr = beta_t.repeat(1, self.memory_dims[0])  # problem is here, beta is not changing
+        beta_tr = beta_t.repeat(1, self.memory_dims[0])  # problem is here, beta is not changing?
         w_c = Funct.softmax(cosine_similarity(k_t, m_t) * beta_tr)  # vector size (memory_dims[0])
 
         # Interpolation

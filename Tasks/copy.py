@@ -11,7 +11,7 @@ from torch.autograd import Variable
 import numpy as np
 
 
-def generate_copy_data(input_shape, seq_len, num_samples=1e5):
+def generate_copy_data(input_shape, seq_len, num_samples=2e4):
     output = []
 
     input_tensor = torch.FloatTensor(*input_shape).uniform_(0, 1)
