@@ -11,7 +11,7 @@ from torch.autograd import Variable
 import numpy as np
 
 
-def generate_copy_data(input_shape, time_seq_len, num_samples=1e5):
+def generate_copy_data(input_shape, seq_len, num_samples=1e5):
     output = []
 
     input_tensor = torch.FloatTensor(*input_shape).uniform_(0, 1)
@@ -19,7 +19,7 @@ def generate_copy_data(input_shape, time_seq_len, num_samples=1e5):
     for j in range(int(num_samples)):
         sample = []
 
-        for i in range(time_seq_len):
+        for i in range(seq_len):
             sample.append(torch.bernoulli(input_tensor).numpy())
 
         output.append(sample)
