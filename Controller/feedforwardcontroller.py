@@ -32,7 +32,7 @@ class FeedForwardController(nn.Module):
         self.num_write_heads = 1
         self.memory_dims = memory_dims
 
-        self.hidden = Variable(torch.rand(batch_size, 1, num_hidden))
+        self.hidden = Variable(torch.FloatTensor(batch_size, 1, num_hidden).normal_(0.0, 1./num_hidden))
 
         self.in_to_hid = nn.Linear(self.num_inputs, self.num_hidden)
         self.read_to_hid = nn.Linear(self.num_read_heads*self.memory_dims[1], self.num_hidden)
