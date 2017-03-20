@@ -44,6 +44,7 @@ class Head(nn.Module):
         self.gamma = nn.Linear(self.num_hidden, 1)
 
     def forward(self, h_t, w_tm1, m_t, get_weights=True):
+
         h_t = h_t.view(-1, num_flat_features(h_t))
 
         k_t = torch.clamp(self.key(h_t), 0.0, 1.0)  # vector size (memory_dims[1])

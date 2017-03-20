@@ -12,20 +12,31 @@ import torch.nn as nn
 import torch.nn.functional as Funct
 from torch.autograd import Variable
 
+from Utils import num_flat_features
+
+
 class RecurrentController(nn.Module):
-    def __init__(self, batch_size, use_cuda=torch.cuda.is_available()):
+    def __init__(self,
+                 num_inputs,
+                 num_hidden,
+                 batch_size,
+                 num_directions,
+                 num_read_heads,
+                 memory_dims=(128, 20)):
         super(RecurrentController, self).__init__()
 
-        self.input_size = 32
-        self.hidden_size = 128
-        self.num_layers = 2
-        self.num_directions = 1
+        self.input_size = num_inputs
+        self.hidden_size = num_hidden
+        self.num_layers = 1
+        self.num_directions = num_directions
         self.batch_size = batch_size
-        self.use_cuda = use_cuda
+        self.memory_dims = memory_dims
 
         h_size = (self.num_layers * self.num_directions, batch_size, self.hidden_size)
         weight = next(self.parameters()).data
         self.h = Variable(weight.new(*h_size).zero_()).cuda()
+
+        self.read_to_in = nn.Linear(self.num_read_heads*self.memory_dims[1], self.num_inputs)
 
         # GRU controller
         self.net = nn.GRU(
@@ -36,12 +47,12 @@ class RecurrentController(nn.Module):
             dropout=0.05
         )
 
-    def forward(self, x):
+    def forward(self, x, read):
+        read = read.view(-1, num_flat_features(read)).contiguous()
+        x += self.read_to_in(read).view(*x.size())
+
         x, self.h = self.net(x, self.h)
 
-        if self.use_cuda:
-            self.h = Variable(self.h.data).cuda()
-        else:
-            self.h = Variable(self.h.data)
+        self.h = Variable(self.h.data)
 
-        return x
+        return x  # or return self.h?
