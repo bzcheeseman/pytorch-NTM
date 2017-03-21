@@ -18,11 +18,11 @@ def generate_copy_data(input_shape, seq_len, num_samples=2e4):
 
     for j in range(int(num_samples)):
         sample = []
-
         for i in range(seq_len):
-            sample.append(torch.bernoulli(input_tensor).numpy())
+            sample.append(torch.bernoulli(input_tensor))
 
-        output.append(sample)
+        sample = torch.cat(sample).view(seq_len, *input_shape)
+        output.append(sample.unsqueeze(0))
 
-    output = np.array(output)
+    output = torch.cat(output, 0)
     return torch.FloatTensor(output), torch.FloatTensor(output)

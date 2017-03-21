@@ -103,12 +103,15 @@ class WriteHead(Head):
             e_t = Funct.hardtanh(self.hid_to_erase(h_t), min_val=0.0, max_val=1.0, inplace=True)
             a_t = torch.clamp(Funct.relu(self.hid_to_add(h_t)), min=0.0, max=1.0)
 
-            m_tp1 = torch.FloatTensor(*m_t.size()).fill_(1.0)
+            mem_erase = torch.zeros(*m_t.size())
+            mem_add = torch.zeros(*m_t.size())
 
             for i in range(e_t.size()[0]):  # batch size
-                torch.addr(1.0, m_tp1, -1.0, w_tm1[i].data, e_t[i].data, out=m_tp1)
-                m_tp1 *= m_t.data
-                torch.addr(1.0, m_tp1, 1.0, w_tm1[i].data, a_t[i].data, out=m_tp1)
+                mem_erase += torch.ger(w_tm1[i].data, e_t[i].data)
+                mem_add += torch.ger(w_tm1[i].data, a_t[i].data)
+
+            m_tp1 = m_t.data * (1.0 - mem_erase)
+            m_tp1 += mem_add
 
             return Variable(m_tp1)
 
